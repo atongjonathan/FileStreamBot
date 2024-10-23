@@ -6,4 +6,5 @@ motor
 aiofiles
 dnspython
 ffmpeg-python==0.2.0
+ffmpeg-static
 

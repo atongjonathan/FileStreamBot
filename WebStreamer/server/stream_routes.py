@@ -1,6 +1,8 @@
 # Taken from megadlbot_oss <https://github.com/eyaadh/megadlbot_oss/blob/master/mega/webserver/routes.py>
 # Thanks to Eyaadh <https://github.com/eyaadh>
 
+import ffmpeg
+import ffmpeg_static  # Import the static binary
 import time
 import math
 import logging
@@ -17,6 +19,7 @@ from WebStreamer.utils.render_template import render_page
 
 routes = web.RouteTableDef()
 
+
 @routes.get("/status", allow_head=True)
 async def root_route_handler(_):
     return web.json_response(
@@ -28,12 +31,14 @@ async def root_route_handler(_):
             "loads": dict(
                 ("bot" + str(c + 1), l)
                 for c, (_, l) in enumerate(
-                    sorted(work_loads.items(), key=lambda x: x[1], reverse=True)
+                    sorted(work_loads.items(),
+                           key=lambda x: x[1], reverse=True)
                 )
             ),
             "version": __version__,
         }
     )
+
 
 @routes.get("/watch/{path}", allow_head=True)
 async def stream_handler(request: web.Request):
@@ -50,6 +55,7 @@ async def stream_handler(request: web.Request):
         logging.critical(e.with_traceback(None))
         logging.debug(traceback.format_exc())
         raise web.HTTPInternalServerError(text=str(e))
+
 
 @routes.get("/dl/{path}", allow_head=True)
 async def stream_handler(request: web.Request):
@@ -69,6 +75,7 @@ async def stream_handler(request: web.Request):
 
 class_cache = {}
 
+
 @routes.get("/video/{path}", allow_head=True)
 async def video_stream_handler(request: web.Request):
     try:
@@ -85,37 +92,42 @@ async def video_stream_handler(request: web.Request):
         logging.debug(traceback.format_exc())
         raise web.HTTPInternalServerError(text=str(e))
 
-import ffmpeg
 
 @routes.get("/hls/{path}", allow_head=True)
 async def hls_handler(request: web.Request):
     path = request.match_info["path"]
-    video_url = f"https://other-cecilia-atong-jonathan-04e43c80.koyeb.app/dl/{path}"  # Adjust your source URL
+    # Adjust your source URL
+    video_url = f"https://other-cecilia-atong-jonathan-04e43c80.koyeb.app/dl/{path}"
 
     try:
-        # Configure ffmpeg to convert the video to HLS and send output to stdout (pipe:1)
+        # Use ffmpeg-python with the static FFmpeg binary path
         process = (
             ffmpeg
             .input(video_url)
             .output(
-                'pipe:1',  # Pipe output to the HTTP response
+                'pipe:1',
                 format='hls',
                 hls_time=4,
                 hls_list_size=0,
-                c_v='copy',  # Copy the video stream without re-encoding
-                c_a='aac'    # Ensure audio is AAC for HLS compatibility
+                c_v='copy',
+                c_a='aac'
             )
-            .run_async(pipe_stdout=True, pipe_stderr=True)
+            .run_async(
+                cmd=[ffmpeg_static.get_ffmpeg_path()],
+                pipe_stdout=True,
+                pipe_stderr=True
+            )
         )
 
         return web.Response(
-            body=process.stdout, 
+            body=process.stdout,
             content_type="application/vnd.apple.mpegurl"
         )
     except ffmpeg.Error as e:
         error_message = e.stderr.decode()
         logging.error(f"FFmpeg error: {error_message}")
-        raise web.HTTPInternalServerError(text=f"FFmpeg failed: {error_message}")
+        raise web.HTTPInternalServerError(
+            text=f"FFmpeg failed: {error_message}")
 
 
 async def media_streamer(request: web.Request, db_id: str, is_video: bool = False):
@@ -125,7 +137,8 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
     faster_client = multi_clients[index]
 
     if Var.MULTI_CLIENT:
-        logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR', request.remote)}")
+        logging.info(
+            f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR', request.remote)}")
 
     if faster_client in class_cache:
         tg_connect = class_cache[faster_client]
@@ -161,12 +174,14 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
     last_part_cut = until_bytes % chunk_size + 1
 
     req_length = until_bytes - from_bytes + 1
-    part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
+    part_count = math.ceil(until_bytes / chunk_size) - \
+        math.floor(offset / chunk_size)
     body = tg_connect.yield_file(
         file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
     )
 
-    mime_type = file_id.mime_type or mimetypes.guess_type(utils.get_name(file_id))[0] or "application/octet-stream"
+    mime_type = file_id.mime_type or mimetypes.guess_type(
+        utils.get_name(file_id))[0] or "application/octet-stream"
 
     # If the request is for video, set disposition to 'inline' to make it streamable
     disposition = "inline" if is_video else "attachment"
