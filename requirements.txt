@@ -6,4 +6,3 @@ motor
 aiofiles
 dnspython
 static-ffmpeg
-subprocess
