@@ -86,6 +86,7 @@ async def video_stream_handler(request: web.Request):
         raise web.HTTPInternalServerError(text=str(e))
 
 import static_ffmpeg
+import subprocess
 # ffmpeg installed on first call, threadsafe.
 
 # ffmpeg installed on first call to add_paths(), threadsafe.
