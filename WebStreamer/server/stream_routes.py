@@ -69,14 +69,63 @@ async def stream_handler(request: web.Request):
 
 class_cache = {}
 
-async def media_streamer(request: web.Request, db_id: str):
+@routes.get("/video/{path}", allow_head=True)
+async def video_stream_handler(request: web.Request):
+    try:
+        path = request.match_info["path"]
+        return await media_streamer(request, path, is_video=True)
+    except InvalidHash as e:
+        raise web.HTTPForbidden(text=e.message)
+    except FIleNotFound as e:
+        raise web.HTTPNotFound(text=e.message)
+    except (AttributeError, BadStatusLine, ConnectionResetError):
+        pass
+    except Exception as e:
+        logging.critical(e.with_traceback(None))
+        logging.debug(traceback.format_exc())
+        raise web.HTTPInternalServerError(text=str(e))
+
+import ffmpeg
+
+@routes.get("/hls/{path}", allow_head=True)
+async def hls_handler(request: web.Request):
+    path = request.match_info["path"]
+    video_url = f"https://other-cecilia-atong-jonathan-04e43c80.koyeb.app/dl/{path}"  # Adjust your source URL
+
+    try:
+        # Configure ffmpeg to convert the video to HLS and send output to stdout (pipe:1)
+        process = (
+            ffmpeg
+            .input(video_url)
+            .output(
+                'pipe:1',  # Pipe output to the HTTP response
+                format='hls',
+                hls_time=4,
+                hls_list_size=0,
+                c_v='copy',  # Copy the video stream without re-encoding
+                c_a='aac'    # Ensure audio is AAC for HLS compatibility
+            )
+            .run_async(pipe_stdout=True, pipe_stderr=True)
+        )
+
+        return web.Response(
+            body=process.stdout, 
+            content_type="application/vnd.apple.mpegurl"
+        )
+    except ffmpeg.Error as e:
+        error_message = e.stderr.decode()
+        logging.error(f"FFmpeg error: {error_message}")
+        raise web.HTTPInternalServerError(text=f"FFmpeg failed: {error_message}")
+
+
+async def media_streamer(request: web.Request, db_id: str, is_video: bool = False):
     range_header = request.headers.get("Range", 0)
-    
+
     index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
-    
+
     if Var.MULTI_CLIENT:
-        logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR',request.remote)}")
+        logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR', request.remote)}")
 
     if faster_client in class_cache:
         tg_connect = class_cache[faster_client]
@@ -85,10 +134,8 @@ async def media_streamer(request: web.Request, db_id: str):
         logging.debug(f"Creating new ByteStreamer object for client {index}")
         tg_connect = utils.ByteStreamer(faster_client)
         class_cache[faster_client] = tg_connect
-    logging.debug("before calling get_file_properties")
+
     file_id = await tg_connect.get_file_properties(db_id, multi_clients)
-    logging.debug("after calling get_file_properties")
-    
     file_size = file_id.file_size
 
     if range_header:
@@ -119,24 +166,21 @@ async def media_streamer(request: web.Request, db_id: str):
         file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
     )
 
-    mime_type = file_id.mime_type
-    file_name = utils.get_name(file_id)
-    disposition = "attachment"
+    mime_type = file_id.mime_type or mimetypes.guess_type(utils.get_name(file_id))[0] or "application/octet-stream"
 
-    if not mime_type:
-        mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-
-    if "video/" in mime_type or "audio/" in mime_type:
-        disposition = "inline"
+    # If the request is for video, set disposition to 'inline' to make it streamable
+    disposition = "inline" if is_video else "attachment"
 
     return web.Response(
         status=206 if range_header else 200,
         body=body,
         headers={
-            "Content-Type": f"{mime_type}",
+            "Content-Type": mime_type,
             "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
             "Content-Length": str(req_length),
-            "Content-Disposition": f'{disposition}; filename="{file_name}"',
+            "Content-Disposition": f'{disposition}; filename="{utils.get_name(file_id)}"',
             "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",  # Allow CORS
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         },
     )
