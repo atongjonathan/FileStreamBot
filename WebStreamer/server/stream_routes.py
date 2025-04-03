@@ -166,7 +166,7 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{utils.get_name(file_id)}"',
             "Accept-Ranges": "bytes",
-            "Access-Control-Allow-Origin": "https://streamgrid.stream/",
+            "Access-Control-Allow-Origin": "https://streamgrid.stream",
             "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         },
     )
