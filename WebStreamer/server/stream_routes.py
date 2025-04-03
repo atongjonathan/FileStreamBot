@@ -155,6 +155,7 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
 
     # If the request is for video, set disposition to 'inline' to make it streamable
     disposition = "inline" if is_video else "attachment"
+    allowed_origins = ["https://movies.atongjona.com", "https://streamgrid.stream/"]
 
     return web.Response(
         status=206 if range_header else 200,
@@ -165,7 +166,7 @@ async def media_streamer(request: web.Request, db_id: str, is_video: bool = Fals
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{utils.get_name(file_id)}"',
             "Accept-Ranges": "bytes",
-            "Access-Control-Allow-Origin": "https://movies.atongjona.com",
+            "Access-Control-Allow-Origin": allowed_origins,
             "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
         },
     )
